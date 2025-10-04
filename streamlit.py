@@ -13,8 +13,8 @@ st.set_page_config(
 @st.cache_resource
 def load_models():
     try:
-        model = joblib.load('models/sentiment_model.keras')
-        le = joblib.load('models/label_encoder.joblib')
+        model = tf.keras.models.load_model('sentiment_model.keras')
+        model = joblib.load('Sentiment_Analysis/sentiment_classifier.joblib')
         
         tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
         bert_model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
@@ -153,6 +153,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
