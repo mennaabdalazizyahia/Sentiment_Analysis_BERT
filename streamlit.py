@@ -1,6 +1,4 @@
 import streamlit as st
-st.set_option('server.fileWatcherType', 'none')
-
 import joblib
 import tensorflow as tf
 import numpy as np
@@ -155,10 +153,4 @@ def main():
                 st.warning("Please, Input a text to analyze.")
 
 if __name__ == "__main__":
-    st.set_option('server.fileWatcherType', 'none')
     main()
-
-
-
-
-
