@@ -1,5 +1,4 @@
 import streamlit as st
-import tensorflow as tf
 import joblib
 import numpy as np
 from transformers import AutoTokenizer, AutoModel
@@ -15,7 +14,7 @@ st.set_page_config(
 def load_models():
     try:
         model = tf.keras.models.load_model('sentiment_model.keras')
-        model = joblib.load('Sentiment_Analysis/sentiment_classifier.joblib')
+        le = joblib.load('label_encoder.joblib')
         
         tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
         bert_model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
@@ -154,8 +153,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
