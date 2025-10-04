@@ -152,6 +152,10 @@ def main():
             else:
                 st.warning("Please, Input a text to analyze.")
 
+st.set_option('server.fileWatcherType', 'none')
 if __name__ == "__main__":
+    st.set_option('server.fileWatcherType', 'none')
     main()
+
+
 
