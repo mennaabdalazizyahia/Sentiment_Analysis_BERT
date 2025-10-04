@@ -1,5 +1,4 @@
 import streamlit as st
-import tensorflow as tf
 import joblib
 import numpy as np
 from transformers import AutoTokenizer, AutoModel
@@ -13,29 +12,33 @@ st.set_page_config(
 
 @st.cache_resource
 def load_models():
-    model = tf.keras.models.load_model('models/sentiment_model.keras')
-    le = joblib.load('models/label_encoder.joblib')
-    
-    # استخدام transformers بدل sentence-transformers
-    tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
-    bert_model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
-    
-    return model, le, bert_model, tokenizer
+    try:
+        model = joblib.load('models/sentiment_classifier.joblib')
+        le = joblib.load('models/label_encoder.joblib')
+        
+        tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+        bert_model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+        
+        return model, le, bert_model, tokenizer
+    except Exception as e:
+        st.error(f"Error loading models: {e}")
+        return None, None, None, None
 
 def encode_text(text, model, tokenizer):
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=128)
     with torch.no_grad():
         outputs = model(**inputs)
-    # استخدام [CLS] token كـ embedding
     embeddings = outputs.last_hidden_state[:, 0, :].numpy()
     return embeddings
 
 def predict_sentiment(text, model, le, bert_model, tokenizer):
     embedding = encode_text(text, bert_model, tokenizer)
-    probability = model.predict(embedding, verbose=0)[0]
-    predicted_class = np.argmax(probability)
+    
+    probability = model.predict_proba(embedding)[0]
+    predicted_class = model.predict(embedding)[0]
     predicted_label = le.inverse_transform([predicted_class])[0]
     confidence = probability[predicted_class]
+    
     return predicted_label, confidence, probability
 
 def main():
@@ -74,7 +77,7 @@ def main():
 
     model, le, bert_model, tokenizer = load_models()
     if model is None:
-        st.error("No model Uploaded")
+        st.error("No model found. Please check your model files.")
         return
     
     col1, col2 = st.columns([2, 1])  
@@ -95,7 +98,7 @@ def main():
                 "Negative 😠": "This is terrible and awful. I hate it so much!",
                 "Neutral 😐": "The product is okay, nothing special but not bad either."
             }
-            selected_sample = st.selectbox("Select a model", list(sample_texts.keys()))
+            selected_sample = st.selectbox("Select a sample", list(sample_texts.keys()))
             user_input = sample_texts[selected_sample]
             st.text_area("Selected text:", user_input, height=100)
         
