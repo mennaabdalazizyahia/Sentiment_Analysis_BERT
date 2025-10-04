@@ -2,29 +2,41 @@ import streamlit as st
 import tensorflow as tf
 import joblib
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModel
+import torch
 import plotly.graph_objects as go
-import plotly.express as px
 
 st.set_page_config(
-    page_title = 'Sentiment Analysis',
-    initial_sidebar_state = 'expanded'
+    page_title='Sentiment Analysis',
+    initial_sidebar_state='expanded'
 )
 
 @st.cache_resource
 def load_models():
     model = tf.keras.models.load_model('models/sentiment_model.keras')
     le = joblib.load('models/label_encoder.joblib')
-    bert_model = joblib.load('models/sentence_encoder.joblib')
-    return model, le, bert_model
+    
+    # استخدام transformers بدل sentence-transformers
+    tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+    bert_model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+    
+    return model, le, bert_model, tokenizer
 
-def predict_sentiment(text,model,le,bert_model):
-    embedding = bert_model.encode([text])
-    probability = model.predict (embedding,verbose = 0)[0]
+def encode_text(text, model, tokenizer):
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=128)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    # استخدام [CLS] token كـ embedding
+    embeddings = outputs.last_hidden_state[:, 0, :].numpy()
+    return embeddings
+
+def predict_sentiment(text, model, le, bert_model, tokenizer):
+    embedding = encode_text(text, bert_model, tokenizer)
+    probability = model.predict(embedding, verbose=0)[0]
     predicted_class = np.argmax(probability)
     predicted_label = le.inverse_transform([predicted_class])[0]
     confidence = probability[predicted_class]
-    return predicted_label,confidence,probability
+    return predicted_label, confidence, probability
 
 def main():
     st.markdown("""
@@ -58,14 +70,15 @@ def main():
     }
     </style>
     """, unsafe_allow_html=True)            
-    st.markdown('<h1 class="main-header">Sentiment Analysis/h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">Sentiment Analysis</h1>', unsafe_allow_html=True)
 
-model, le, bert_model = load_models()
-if model is None:
-    st.error("No model Uploaded")
+    model, le, bert_model, tokenizer = load_models()
+    if model is None:
+        st.error("No model Uploaded")
+        return
     
-col1, col2 = st.columns([2, 1])  
-with col1:
+    col1, col2 = st.columns([2, 1])  
+    with col1:
         st.subheader("Write a Comment:")
         input_option = st.radio("choose input method: ", 
                               ["Write a comment", "Sample text entry"])
@@ -84,16 +97,17 @@ with col1:
             }
             selected_sample = st.selectbox("Select a model", list(sample_texts.keys()))
             user_input = sample_texts[selected_sample]
-            st.text_area("Selected model:", user_input, height=100)
-    
-            if st.button('Sentiment Analysis', use_container_width=True):
-                if user_input.strip():
-                        predicted_label, confidence, probabilities = predict_sentiment(
-                        user_input, model, le, bert_model
-                )
+            st.text_area("Selected text:", user_input, height=100)
+        
+        if st.button('Sentiment Analysis', use_container_width=True):
+            if user_input.strip():
+                with st.spinner("Analyzing sentiment..."):
+                    predicted_label, confidence, probabilities = predict_sentiment(
+                        user_input, model, le, bert_model, tokenizer
+                    )
                 
                 st.markdown("---")
-                st.subheader('Results : ')
+                st.subheader('Results:')
                 
                 sentiment_emojis = {
                     "Positive": "😊 Positive",
@@ -112,8 +126,9 @@ with col1:
                 st.markdown(f'<div class="{css_class}"><h2>{display_label}</h2></div>', 
                           unsafe_allow_html=True)
                 
-                st.metric("Confidence : ", f"{confidence:.2%}")
+                st.metric("Confidence:", f"{confidence:.2%}")
                 st.progress(float(confidence))
+                
                 with col2:
                     st.subheader("Sentiment Classification")
                     
@@ -130,9 +145,8 @@ with col1:
                         height=300
                     )
                     st.plotly_chart(fig, use_container_width=True)
-
             else:
                 st.warning("Please, Input a text to analyze.")
 
-if __name__== "__main__":
-    main()                
+if __name__ == "__main__":
+    main()
