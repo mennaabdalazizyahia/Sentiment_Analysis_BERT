@@ -2,8 +2,7 @@ import streamlit as st
 import joblib
 import tensorflow as tf
 import numpy as np
-from transformers import AutoTokenizer, AutoModel
-import torch
+from sentence_transformers import SentenceTransformer
 import plotly.graph_objects as go
 
 st.set_page_config(
@@ -14,29 +13,71 @@ st.set_page_config(
 @st.cache_resource
 def load_models():
     try:
-        model = tf.keras.models.load_model('sentiment_model.keras')
+        # جرب تحمل الموديل بطرق مختلفة
+        model = None
+        
+        # طريقة 1: حمل الموديل مع تجاهل الـ custom objects
+        try:
+            model = tf.keras.models.load_model('sentiment_model.keras', compile=False)
+            st.success("✅ Model loaded from .keras file")
+        except Exception as e1:
+            st.warning(f"⚠️ Failed to load .keras: {str(e1)[:100]}")
+            
+            # طريقة 2: حمل من .h5
+            try:
+                model = tf.keras.models.load_model('sentiment_model.h5', compile=False)
+                st.success("✅ Model loaded from .h5 file")
+            except Exception as e2:
+                st.warning(f"⚠️ Failed to load .h5: {str(e2)[:100]}")
+                
+                # طريقة 3: بناء الموديل من جديد وتحميل الـ weights
+                st.info("🔧 Attempting to rebuild model and load weights...")
+                model = tf.keras.Sequential([
+                    tf.keras.layers.Dense(256, activation="relu", input_shape=(384,)),
+                    tf.keras.layers.Dropout(0.3),
+                    tf.keras.layers.Dense(128, activation="relu"),
+                    tf.keras.layers.Dropout(0.3),
+                    tf.keras.layers.Dense(3, activation="softmax")
+                ])
+                
+                try:
+                    model.load_weights('model_weights.h5')
+                    st.success("✅ Model rebuilt and weights loaded")
+                except Exception as e3:
+                    st.error(f"❌ All loading methods failed: {str(e3)[:100]}")
+                    return None, None, None
+        
+        # إعادة compile الموديل
+        if model is not None:
+            model.compile(
+                optimizer='adam',
+                loss='sparse_categorical_crossentropy',
+                metrics=['accuracy']
+            )
+        
+        # حمل الـ label encoder
         le = joblib.load('label_encoder.joblib')
         
-        tokenizer = AutoTokenizer.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
-        bert_model = AutoModel.from_pretrained('sentence-transformers/all-MiniLM-L6-v2')
+        # حمل الـ BERT model
+        bert_model = SentenceTransformer('all-MiniLM-L6-v2')
         
-        return model, le, bert_model, tokenizer
+        return model, le, bert_model
+        
     except Exception as e:
-        st.error(f"Error loading models: {e}")
-        return None, None, None, None
+        st.error(f"❌ Error loading models: {e}")
+        return None, None, None
 
-def encode_text(text, model, tokenizer):
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=128)
-    with torch.no_grad():
-        outputs = model(**inputs)
-    embeddings = outputs.last_hidden_state[:, 0, :].numpy()
+def encode_text(text, bert_model):
+    """تحويل النص لـ embedding باستخدام BERT"""
+    embeddings = bert_model.encode([text])
     return embeddings
 
-def predict_sentiment(text, model, le, bert_model, tokenizer):
+def predict_sentiment(text, model, le, bert_model):
+    """توقع المشاعر من النص"""
     # Get embedding
-    embedding = encode_text(text, bert_model, tokenizer)
+    embedding = encode_text(text, bert_model)
     
-    # Predict using Keras model (returns probabilities directly)
+    # Predict using Keras model
     probabilities = model.predict(embedding, verbose=0)[0]
     
     # Get predicted class
@@ -80,9 +121,45 @@ def main():
     """, unsafe_allow_html=True)            
     st.markdown('<h1 class="main-header">🎭 Sentiment Analysis</h1>', unsafe_allow_html=True)
 
-    model, le, bert_model, tokenizer = load_models()
+    model, le, bert_model = load_models()
+    
     if model is None:
-        st.error("❌ No model found. Please check your model files.")
+        st.error("❌ Could not load model. Please check the troubleshooting steps below:")
+        with st.expander("🔧 Troubleshooting Steps"):
+            st.markdown("""
+            **The model file has compatibility issues. Please:**
+            
+            1. **Re-save your model** using this code in your training script:
+            ```python
+            # Instead of:
+            # model = models.Sequential([
+            #     layers.Input(shape=(384,)),
+            #     layers.Dense(256, activation="relu"),
+            #     ...
+            # ])
+            
+            # Use this:
+            model = models.Sequential([
+                layers.Dense(256, activation="relu", input_shape=(384,)),
+                layers.Dropout(0.3),
+                layers.Dense(128, activation="relu"),
+                layers.Dropout(0.3),
+                layers.Dense(3, activation="softmax")
+            ])
+            
+            model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+            
+            # Train your model...
+            # history = model.fit(...)
+            
+            # Save correctly:
+            model.save('sentiment_model_fixed.keras')
+            ```
+            
+            2. Replace the old `sentiment_model.keras` with the new `sentiment_model_fixed.keras`
+            
+            3. Redeploy your app
+            """)
         return
     
     st.subheader("✍️ Write a Comment:")
@@ -108,9 +185,13 @@ def main():
     if st.button('🔍 Analyze Sentiment', use_container_width=True):
         if user_input.strip():
             with st.spinner("Analyzing sentiment..."):
-                predicted_label, confidence, probabilities = predict_sentiment(
-                    user_input, model, le, bert_model, tokenizer
-                )
+                try:
+                    predicted_label, confidence, probabilities = predict_sentiment(
+                        user_input, model, le, bert_model
+                    )
+                except Exception as e:
+                    st.error(f"❌ Error during prediction: {e}")
+                    return
             
             st.markdown("---")
             
