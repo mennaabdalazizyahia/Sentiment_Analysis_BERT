@@ -1,257 +1,128 @@
 import streamlit as st
 import joblib
-import tensorflow as tf
 import numpy as np
-from sentence_transformers import SentenceTransformer
-import plotly.graph_objects as go
+import tensorflow as tf
+from tensorflow.keras.models import load_model 
 
+# Set up the basic page configuration
 st.set_page_config(
-    page_title='Sentiment Analysis',
-    initial_sidebar_state='expanded'
+    page_title="Sentiment Analysis App",
+    page_icon="🤖",
+    layout="wide"
 )
 
+# ----------------------------------------------------------------------
+# 1. Load Assets
+# ----------------------------------------------------------------------
+
+# Use @st.cache_resource to prevent model reloading upon user interaction
 @st.cache_resource
-def load_models():
+def load_assets():
+    """Loads the models, Label Encoder, and Sentence Encoder."""
     try:
-        # جرب تحمل الموديل بطرق مختلفة
-        model = None
+        # 1. Load Sentence Encoder (BERT model)
+        sentence_encoder = joblib.load('sentence_encoder.joblib')
         
-        # طريقة 1: حمل الموديل مع تجاهل الـ custom objects
-        try:
-            model = tf.keras.models.load_model('sentiment_model.keras', compile=False)
-            st.success("✅ Model loaded from .keras file")
-        except Exception as e1:
-            st.warning(f"⚠️ Failed to load .keras: {str(e1)[:100]}")
-            
-            # طريقة 2: حمل من .h5
-            try:
-                model = tf.keras.models.load_model('sentiment_model.h5', compile=False)
-                st.success("✅ Model loaded from .h5 file")
-            except Exception as e2:
-                st.warning(f"⚠️ Failed to load .h5: {str(e2)[:100]}")
-                
-                # طريقة 3: بناء الموديل من جديد وتحميل الـ weights
-                st.info("🔧 Attempting to rebuild model and load weights...")
-                model = tf.keras.Sequential([
-                    tf.keras.layers.Dense(256, activation="relu", input_shape=(384,)),
-                    tf.keras.layers.Dropout(0.3),
-                    tf.keras.layers.Dense(128, activation="relu"),
-                    tf.keras.layers.Dropout(0.3),
-                    tf.keras.layers.Dense(3, activation="softmax")
-                ])
-                
-                try:
-                    model.load_weights('model_weights.h5')
-                    st.success("✅ Model rebuilt and weights loaded")
-                except Exception as e3:
-                    st.error(f"❌ All loading methods failed: {str(e3)[:100]}")
-                    return None, None, None
+        # 2. Load the trained Keras/TensorFlow model
+        sentiment_model = load_model('sentiment_model.keras')
         
-        # إعادة compile الموديل
-        if model is not None:
-            model.compile(
-                optimizer='adam',
-                loss='sparse_categorical_crossentropy',
-                metrics=['accuracy']
-            )
+        # 3. Load the Label Encoder
+        label_encoder = joblib.load('label_encoder.joblib')
+
+        # Extract class names (Positive, Negative, Neutral)
+        classes = label_encoder.classes_
         
-        # حمل الـ label encoder
-        le = joblib.load('label_encoder.joblib')
-        
-        # حمل الـ BERT model
-        bert_model = SentenceTransformer('all-MiniLM-L6-v2')
-        
-        return model, le, bert_model
-        
+        return sentiment_model, sentence_encoder, classes
+    
+    except FileNotFoundError as e:
+        # Clear error message if model files are not found
+        st.error(
+            f"⚠️ Error: Could not find saved files. Please ensure 'sentiment_model.keras', 'sentence_encoder.joblib', and 'label_encoder.joblib' are in the same folder as 'app.py'."
+        )
+        st.stop()
     except Exception as e:
-        st.error(f"❌ Error loading models: {e}")
-        return None, None, None
+        st.error(f"An error occurred while loading the models: {e}")
+        st.stop()
 
-def encode_text(text, bert_model):
-    """تحويل النص لـ embedding باستخدام BERT"""
-    embeddings = bert_model.encode([text])
-    return embeddings
+sentiment_model, sentence_encoder, classes = load_assets()
 
-def predict_sentiment(text, model, le, bert_model):
-    """توقع المشاعر من النص"""
-    # Get embedding
-    embedding = encode_text(text, bert_model)
-    
-    # Predict using Keras model
-    probabilities = model.predict(embedding, verbose=0)[0]
-    
-    # Get predicted class
-    predicted_class = np.argmax(probabilities)
-    predicted_label = le.inverse_transform([predicted_class])[0]
-    confidence = probabilities[predicted_class]
-    
-    return predicted_label, confidence, probabilities
+# ----------------------------------------------------------------------
+# 2. Prediction Function
+# ----------------------------------------------------------------------
 
-def main():
-    st.markdown("""
-    <style>
-    .main-header {
-        font-size: 3rem;
-        color: #1DA1F2;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .sentiment-positive {
-        background-color: #d4edda;
-        color: #155724;
-        padding: 10px;
-        border-radius: 10px;
-        border: 2px solid #c3e6cb;
-    }
-    .sentiment-negative {
-        background-color: #f8d7da;
-        color: #721c24;
-        padding: 10px;
-        border-radius: 10px;
-        border: 2px solid #f5c6cb;
-    }
-    .sentiment-neutral {
-        background-color: #fff3cd;
-        color: #856404;
-        padding: 10px;
-        border-radius: 10px;
-        border: 2px solid #ffeaa7;
-    }
-    </style>
-    """, unsafe_allow_html=True)            
-    st.markdown('<h1 class="main-header">🎭 Sentiment Analysis</h1>', unsafe_allow_html=True)
+def predict_sentiment(text):
+    """Converts text to an embedding and predicts sentiment."""
+    if not text or not text.strip():
+        return None, None
+        
+    # 1. Encode the text (input must be a list)
+    try:
+        # show_progress_bar=False is recommended for Streamlit apps
+        embedding = sentence_encoder.encode([text], show_progress_bar=False)
+    except Exception as e:
+        st.error(f"Error encoding text (BERT): {e}")
+        return None, None
+    
+    # 2. Predict using the Keras model
+    prediction = sentiment_model.predict(embedding, verbose=0)
+    
+    # 3. Get the predicted class and confidence
+    predicted_class_index = np.argmax(prediction, axis=1)[0]
+    
+    sentiment = classes[predicted_class_index]
+    confidence = prediction[0][predicted_class_index]
+    
+    return sentiment, confidence
 
-    model, le, bert_model = load_models()
-    
-    if model is None:
-        st.error("❌ Could not load model. Please check the troubleshooting steps below:")
-        with st.expander("🔧 Troubleshooting Steps"):
-            st.markdown("""
-            **The model file has compatibility issues. Please:**
+# ----------------------------------------------------------------------
+# 3. Streamlit Interface
+# ----------------------------------------------------------------------
+
+st.title("💡 Sentiment Analysis Application")
+st.markdown("This application uses a trained **BERT** model (via Sentence Transformers) to classify sentiment into: **Positive**, **Negative**, or **Neutral**.")
+
+# Text input area
+user_input = st.text_area(
+    "Enter the text to analyze here:",
+    placeholder="For example: This product is absolutely wonderful!",
+    height=150
+)
+
+# Analysis button
+if st.button("Analyze Sentiment", type="primary"):
+    if user_input:
+        
+        # Perform prediction
+        sentiment, confidence = predict_sentiment(user_input)
+
+        if sentiment:
+            # Format results
+            confidence_percent = f"{confidence * 100:.2f}%"
             
-            1. **Re-save your model** using this code in your training script:
-            ```python
-            # Instead of:
-            # model = models.Sequential([
-            #     layers.Input(shape=(384,)),
-            #     layers.Dense(256, activation="relu"),
-            #     ...
-            # ])
-            
-            # Use this:
-            model = models.Sequential([
-                layers.Dense(256, activation="relu", input_shape=(384,)),
-                layers.Dropout(0.3),
-                layers.Dense(128, activation="relu"),
-                layers.Dropout(0.3),
-                layers.Dense(3, activation="softmax")
-            ])
-            
-            model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-            
-            # Train your model...
-            # history = model.fit(...)
-            
-            # Save correctly:
-            model.save('sentiment_model_fixed.keras')
-            ```
-            
-            2. Replace the old `sentiment_model.keras` with the new `sentiment_model_fixed.keras`
-            
-            3. Redeploy your app
-            """)
-        return
-    
-    st.subheader("✍️ Write a Comment:")
-    input_option = st.radio("Choose input method:", 
-                          ["Write a comment", "Sample text entry"])
-    
-    if input_option == 'Write a comment':
-        user_input = st.text_area(
-            "Write here:",
-            placeholder="EX: I love this product! It's brilliant!",
-            height=150
-        )  
-    else:
-        sample_texts = {
-            "Positive 😊": "I absolutely love this! It's fantastic and amazing!",
-            "Negative 😠": "This is terrible and awful. I hate it so much!",
-            "Neutral 😐": "The product is okay, nothing special but not bad either."
-        }
-        selected_sample = st.selectbox("Select a sample", list(sample_texts.keys()))
-        user_input = sample_texts[selected_sample]
-        st.text_area("Selected text:", user_input, height=100)
-    
-    if st.button('🔍 Analyze Sentiment', use_container_width=True):
-        if user_input.strip():
-            with st.spinner("Analyzing sentiment..."):
-                try:
-                    predicted_label, confidence, probabilities = predict_sentiment(
-                        user_input, model, le, bert_model
-                    )
-                except Exception as e:
-                    st.error(f"❌ Error during prediction: {e}")
-                    return
-            
+            # Determine icon and color based on sentiment
+            if sentiment == 'Positive':
+                icon = "⭐"
+                color = "green"
+            elif sentiment == 'Negative':
+                icon = "❌"
+                color = "red"
+            else: # Neutral
+                icon = "〰️"
+                color = "blue"
+
+            # Display results in a stylish card
             st.markdown("---")
+            st.subheader(f"Predicted Result: {icon} {sentiment}")
             
-            col1, col2 = st.columns([1, 1])
+            # Use st.columns and st.metric for a clean display
+            col1, col2 = st.columns([1, 3])
             
             with col1:
-                st.subheader('📊 Results:')
-                
-                sentiment_emojis = {
-                    "Positive": "😊 Positive",
-                    "Negative": "😠 Negative", 
-                    "Neutral": "😐 Neutral"
-                }
-                sentiment_classes = {
-                    "Positive": "sentiment-positive",
-                    "Negative": "sentiment-negative",
-                    "Neutral": "sentiment-neutral"
-                }
-                
-                display_label = sentiment_emojis.get(predicted_label, predicted_label)
-                css_class = sentiment_classes.get(predicted_label, "sentiment-neutral")
-                
-                st.markdown(f'<div class="{css_class}"><h2 style="text-align:center; margin:0;">{display_label}</h2></div>', 
-                          unsafe_allow_html=True)
-                
-                st.markdown("<br>", unsafe_allow_html=True)
-                st.metric("Confidence Level", f"{confidence:.2%}")
-                st.progress(float(confidence))
+                st.metric(label="Confidence Score", value=confidence_percent)
             
             with col2:
-                st.subheader("📈 Probability Distribution")
-                
-                labels = le.classes_
-                colors = []
-                for label in labels:
-                    if label == "Positive":
-                        colors.append('#2ecc71')
-                    elif label == "Negative":
-                        colors.append('#e74c3c')
-                    else:
-                        colors.append('#f39c12')
-                
-                fig = go.Figure(data=[
-                    go.Bar(x=labels, y=probabilities,
-                          marker_color=colors,
-                          text=[f'{p:.1%}' for p in probabilities],
-                          textposition='auto')
-                ])
-                
-                fig.update_layout(
-                    title="Sentiment Probabilities",
-                    xaxis_title="Sentiment",
-                    yaxis_title="Probability",
-                    yaxis=dict(tickformat='.0%'),
-                    height=300,
-                    showlegend=False
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("⚠️ Please input a text to analyze.")
+                # Display a progress bar for confidence
+                st.progress(confidence)
 
-if __name__ == "__main__":
-    main()
+    else:
+        st.warning("Please enter text for analysis before pressing the button.")
