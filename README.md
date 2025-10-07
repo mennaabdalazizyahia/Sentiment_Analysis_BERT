@@ -13,7 +13,7 @@ A smart and interactive sentiment analysis web application that can detect emoti
 ## Quick Start
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.11
 - Streamlit
 - TensorFlow
 - Scikit-learn
