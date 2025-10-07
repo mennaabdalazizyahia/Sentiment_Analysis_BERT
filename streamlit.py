@@ -15,7 +15,7 @@ from collections import Counter
 # Streamlit page setup
 st.set_page_config(
     page_title="Sentiment Analysis with BERT",
-    page_icon="📊",
+    page_icon="",
     layout="wide"
 )
 
@@ -466,3 +466,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
