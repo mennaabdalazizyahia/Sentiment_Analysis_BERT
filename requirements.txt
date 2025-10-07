@@ -1,0 +1,10 @@
+streamlit
+tensorflow==2.15.0
+keras==2.15.0
+torch
+transformers
+joblib
+numpy
+plotly
+scikit-learn
+sentence-transformers
