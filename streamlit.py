@@ -24,15 +24,19 @@ st.set_page_config(
 st.title("🎯 Advanced Sentiment Analysis - Train & Predict")
 st.markdown("---")
 
-# Initialize session state
+# Initialize session state properly
 if 'model_trained' not in st.session_state:
     st.session_state.model_trained = False
 if 'model' not in st.session_state:
     st.session_state.model = None
-if 'vectorizer' not in st.session_state:
-    st.session_state.vectorizer = None
 if 'le' not in st.session_state:
     st.session_state.le = None
+if 'test_accuracy' not in st.session_state:
+    st.session_state.test_accuracy = 0.0
+if 'training_data' not in st.session_state:
+    st.session_state.training_data = None
+if 'history' not in st.session_state:
+    st.session_state.history = None
 
 class AdvancedSentimentAnalyzer:
     def __init__(self):
@@ -83,7 +87,7 @@ class AdvancedSentimentAnalyzer:
         # Sentiment scores
         total_sentiment_words = positive_count + negative_count
         sentiment_balance = positive_count - negative_count
-        sentiment_ratio = positive_count / max(negative_count, 1)
+        sentiment_ratio = positive_count / max(negative_count, 1) if negative_count > 0 else positive_count
         
         # Text characteristics
         text_length = len(text)
@@ -326,7 +330,6 @@ if st.sidebar.button("🚀 Train Advanced Model", type="primary", use_container_
         # Store in session state
         st.session_state.model = model
         st.session_state.le = le
-        st.session_state.analyzer = analyzer
         st.session_state.model_trained = True
         st.session_state.training_data = training_data
         st.session_state.test_accuracy = test_accuracy
@@ -335,9 +338,10 @@ if st.sidebar.button("🚀 Train Advanced Model", type="primary", use_container_
         st.sidebar.success(f"✅ Model trained! Accuracy: {test_accuracy:.2%}")
 
 # Main content
-if st.session_state.model_trained:
-    st.sidebar.success("✅ Model Ready!")
-    st.sidebar.metric("Test Accuracy", f"{st.session_state.test_accuracy:.2%}")
+if st.session_state.model_trained and st.session_state.model is not None:
+    # Show accuracy only if it exists
+    if hasattr(st.session_state, 'test_accuracy') and st.session_state.test_accuracy > 0:
+        st.sidebar.metric("Test Accuracy", f"{st.session_state.test_accuracy:.2%}")
     
     # Prediction section
     st.header("🔍 Analyze Text Sentiment")
@@ -437,7 +441,7 @@ if st.session_state.model_trained:
     with tab1:
         st.subheader("Model Training Progress")
         
-        if 'history' in st.session_state:
+        if st.session_state.history is not None:
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
             
             # Accuracy plot
@@ -459,20 +463,25 @@ if st.session_state.model_trained:
             ax2.grid(True, alpha=0.3)
             
             st.pyplot(fig)
+        else:
+            st.info("No training history available")
     
     with tab2:
         st.subheader("Training Data Sample")
-        st.dataframe(st.session_state.training_data, use_container_width=True)
-        
-        # Data statistics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Samples", len(st.session_state.training_data))
-        with col2:
-            counts = st.session_state.training_data['sentiment'].value_counts()
-            st.metric("Positive Samples", counts['Positive'])
-        with col3:
-            st.metric("Negative Samples", counts['Negative'])
+        if st.session_state.training_data is not None:
+            st.dataframe(st.session_state.training_data, use_container_width=True)
+            
+            # Data statistics
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Samples", len(st.session_state.training_data))
+            with col2:
+                counts = st.session_state.training_data['sentiment'].value_counts()
+                st.metric("Positive Samples", counts['Positive'])
+            with col3:
+                st.metric("Negative Samples", counts['Negative'])
+        else:
+            st.info("No training data available")
     
     with tab3:
         st.subheader("Model Architecture")
