@@ -24,6 +24,7 @@ def load_assets():
         sentence_encoder = joblib.load('sentence_encoder.joblib')
         
         # 2. Load the trained Keras/TensorFlow model
+        # NOTE: Make sure 'sentiment_model.keras' is correctly available
         sentiment_model = load_model('sentiment_model.keras')
         
         # 3. Load the Label Encoder
@@ -37,7 +38,7 @@ def load_assets():
     except FileNotFoundError as e:
         # Clear error message if model files are not found
         st.error(
-            f"⚠️ Error: Could not find saved files. Please ensure 'sentiment_model.keras', 'sentence_encoder.joblib', and 'label_encoder.joblib' are in the same folder as 'app.py'."
+            f"⚠️ Error: Could not find saved files. Please ensure 'sentiment_model.keras', 'sentence_encoder.joblib', and 'label_encoder.joblib' are in the same folder."
         )
         st.stop()
     except Exception as e:
